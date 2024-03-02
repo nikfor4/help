@@ -1,14 +1,7 @@
 import os
-import jwt
-from flask import Flask, jsonify, request, current_app
+from flask import Flask, jsonify, request
 import psycopg2
-from flask_paginate import Pagination, get_page_args
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
-from models import Post, Like, db
-
-
-
 
 app = Flask(__name__)
 
@@ -23,9 +16,11 @@ def connect_to_db():
     )
     return conn
 
+
 @app.route('/api/ping', methods=['GET'])
 def ping():
     return jsonify({'message': 'ok'})
+
 
 @app.route('/api/countries', methods=['GET'])
 def get_countries():
@@ -49,6 +44,8 @@ def get_countries():
     finally:
         if conn:
             conn.close()
+
+
 @app.route('/api/countries/<alpha2>', methods=['GET'])
 def get_country_by_alpha2(alpha2):
     try:
@@ -69,6 +66,8 @@ def get_country_by_alpha2(alpha2):
     finally:
         if conn:
             conn.close()
+
+
 @app.route('/api/countries', methods=['GET'])
 def get_countries():
     try:
@@ -92,6 +91,8 @@ def get_countries():
     finally:
         if conn:
             conn.close()
+
+
 @app.route('/api/countries/<alpha2>', methods=['GET'])
 def get_country_by_alpha2(alpha2):
     try:
@@ -112,6 +113,8 @@ def get_country_by_alpha2(alpha2):
     finally:
         if conn:
             conn.close()
+
+
 @app.route('/api/countries', methods=['GET'])
 def get_countries():
     try:
@@ -135,6 +138,8 @@ def get_countries():
     finally:
         if conn:
             conn.close()
+
+
 @app.route('/api/profiles/<string:login>', methods=['GET'])
 def get_profile_by_login(login):
     try:
@@ -163,12 +168,15 @@ def get_profile_by_login(login):
     finally:
         if conn:
             conn.close()
+
+
 users = {
     "user1": {
         "password": "password123",
         "tokens": []
     }
 }
+
 
 @app.route("/me/updatePassword", methods=["POST"])
 def update_password():
@@ -189,8 +197,11 @@ def update_password():
 
     return jsonify({"message": "Password updated successfully"})
 
+
 def get_user_login_from_token(token: str) -> str:
     return "user1"
+
+
 # Эндпоинт для добавления друга
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://username:password@localhost/dbname'
 db = SQLAlchemy(app)
@@ -246,6 +257,8 @@ def remove_friend():
     db.session.commit()
 
     return jsonify({"message": "Friend removed successfully"})
+
+
 @app.route('/friends', methods=['GET'])
 def get_friends():
     user_id = request.args.get('user_id')
@@ -261,119 +274,7 @@ def get_friends():
 
     return jsonify({"friends": friends_list})
 
-class Post(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
-    content = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __repr__(self):
-        return f"<Post {self.id}>"
-@app.route('/posts', methods=['POST'])
-def create_post():
-    data = request.json
-    user_id = data.get('user_id')
-    content = data.get('content')
-
-    if not user_id or not content:
-        return jsonify({"error": "User ID or content is missing"}), 400
-
-    # Создаем новую публикацию в базе данных
-    post = Post(user_id=user_id, content=content)
-    db.session.add(post)
-    db.session.commit()
-
-    return jsonify({"message": "Post created successfully"}), 201
-
-@app.route('/posts/<int:post_id>', methods=['GET'])
-def get_post(post_id):
-    post = Post.query.get(post_id)
-
-    if not post:
-        return jsonify({"error": "Post not found"}), 404
-
-    # Преобразуем данные о публикации в формат JSON и возвращаем
-    return jsonify({"id": post.id, "user_id": post.user_id, "content": post.content, "created_at": post.created_at})
-
-@app.route('/api/posts/feed', methods=['GET'])
-def get_news_feed():
-    user_id = get_user_id_from_token(request.headers.get('Authorization'))
-
-    if user_id is None:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    # Получаем параметры пагинации из запроса
-    offset = request.args.get('offset', 0, type=int)
-    limit = request.args.get('limit', 5, type=int)
-
-    # Запрос на получение постов из ленты пользователя
-    posts = Post.query.filter_by(user_id=user_id).order_by(Post.created_at.desc()).offset(offset).limit(limit).all()
-
-    # Преобразуем список постов в JSON и отправляем клиенту
-    return jsonify([post.serialize() for post in posts])
-
-def get_user_id_from_token(request):
-    auth_header = request.headers.get('Authorization')
-    if not auth_header:
-        return None
-    parts = auth_header.split()
-    if len(parts) != 2 or parts[0].lower() != 'bearer':
-        return None
-    token = parts[1]
-    try:
-        payload = jwt.decode(token, current_app.config['SECRET_KEY'], algorithms=['HS256'])
-        user_id = payload['user_id']
-        return user_id
-    except jwt.ExpiredSignatureError:
-        return None  # Токен истек
-    except jwt.InvalidTokenError:
-        return None
-
-@app.route('/api/posts/like', methods=['POST'])
-def like_post():
-    user_id = get_user_id_from_token(request.headers.get('Authorization'))
-
-    if user_id is None:
-        return jsonify({'error': 'Unauthorized'}), 401
-
-    data = request.json
-    post_id = data.get('post_id')
-    reaction = data.get('reaction')  # 'like' or 'dislike'
-
-    if post_id is None or reaction not in ['like', 'dislike']:
-        return jsonify({'error': 'Invalid request'}), 400
-
-    # Проверяем, существует ли пост с указанным post_id
-    post = Post.query.get(post_id)
-
-    if post is None:
-        return jsonify({'error': 'Post not found'}), 404
-
-    # Проверяем, не ставил ли пользователь уже реакцию на этот пост
-    existing_reaction = Like.query.filter_by(user_id=user_id, post_id=post_id).first()
-
-    if existing_reaction is not None:
-        return jsonify({'error': 'Reaction already exists'}), 400
-
-    # Создаем новую запись в таблице лайков с указанными данными
-    new_reaction = Like(user_id=user_id, post_id=post_id, reaction=reaction)
-    db.session.add(new_reaction)
-    db.session.commit()
-
-    return jsonify({'message': 'Reaction added successfully'}), 200
-
-@app.route('/api/posts/likes', methods=['GET'])
-def get_post_likes():
-    post_id = request.args.get('post_id')
-
-    if post_id is None:
-        return jsonify({'error': 'Invalid request'}), 400
-
-    # Получаем количество лайков и дизлайков для указанного поста
-    likes_count = Like.query.filter_by(post_id=post_id, reaction='like').count()
-    dislikes_count = Like.query.filter_by(post_id=post_id, reaction='dislike').count()
-
-    return jsonify({'likes_count': likes_count, 'dislikes_count': dislikes_count}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
